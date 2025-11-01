@@ -3,7 +3,7 @@
 An **interactive web application** built with [Streamlit](https://streamlit.io/) and [Plotly](https://plotly.com/python/) that allows you to automatically generate **charts and key indicators** from an Excel or CSV spreadsheet.  
 Ideal for quick financial data analysis, tracking expenses, revenues, or any time-series dataset with **Date**, **Value**, and **Category** columns.
 
-🗣 Application is in PT-BR because it was part of a college subject and it was one of the rules needed to accomplish.
+🗣 Application is in PT-BR because the project was part of a college subject and it was one of the rules needed to accomplish.
 
 ---
 
