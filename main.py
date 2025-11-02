@@ -156,12 +156,144 @@ if uploaded:
     st.metric("Total", f"R$ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
     # 🔹 Prévia dos dados filtrados
+    # =========================
+    # PRÉVIA + ORDENAR + GRÁFICOS
+    # =========================
+
+    # --- Estado e ordenação padrão (Data desc) ---
+    if "sort_col" not in st.session_state:
+        st.session_state["sort_col"] = date_col
+    if "sort_asc" not in st.session_state:
+        st.session_state["sort_asc"] = False  # False = desc (mais recente -> mais antigo)
+
+    # Aplica ordenação corrente ao dff ANTES da prévia
+    if not dff.empty and st.session_state["sort_col"] in dff.columns:
+        dff = dff.sort_values(
+            by=st.session_state["sort_col"],
+            ascending=st.session_state["sort_asc"]
+        )
+
+    # -------- Controles de ordenação (acima da tabela) --------
+    st.markdown(
+        "<div style='display:flex; gap:8px; align-items:center; margin-top:8px;'>"
+        "<span style='opacity:0.8;'>Ordenar:</span>"
+        "</div>", unsafe_allow_html=True
+    )
+    b1, b2, b3, b4, _sp = st.columns([1,1,1,1,6])
+    with b1:
+        if st.button("Data ▲"):
+            st.session_state["sort_col"] = date_col
+            st.session_state["sort_asc"] = True
+    with b2:
+        if st.button("Data ▼"):
+            st.session_state["sort_col"] = date_col
+            st.session_state["sort_asc"] = False
+    with b3:
+        if st.button("Valor ▲"):
+            st.session_state["sort_col"] = value_col
+            st.session_state["sort_asc"] = True
+    with b4:
+        if st.button("Valor ▼"):
+            st.session_state["sort_col"] = value_col
+            st.session_state["sort_asc"] = False
+
+    # Reaplica a ordenação após cliques
+    if not dff.empty and st.session_state["sort_col"] in dff.columns:
+        dff = dff.sort_values(
+            by=st.session_state["sort_col"],
+            ascending=st.session_state["sort_asc"]
+        )
+
+    # -------- Prévia (tabela HTML formatada) --------
     st.subheader("Prévia dos dados filtrados")
-    st.dataframe(dff.head(200))
+
+    # Função utilitária para moeda BR
+    def _format_brl(x: float) -> str:
+        try:
+            return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        except Exception:
+            return "-"
+
+    preview_df = dff.head(200).copy()
+
+    # 1) Data em DD/MM/YYYY
+    if date_col in preview_df.columns:
+        preview_df[date_col] = pd.to_datetime(preview_df[date_col], errors="coerce").dt.strftime("%d/%m/%Y")
+
+    # 2) Valor com "R$" à esquerda e número centralizado
+    if value_col in preview_df.columns:
+        preview_df[value_col] = preview_df[value_col].apply(
+            lambda v: (
+                f"<div style='display:flex;align-items:center;'>"
+                f"<span style='margin-right:6px;'>R$</span>"
+                f"<span style='flex:1;text-align:center;'>{_format_brl(v)}</span>"
+                f"</div>"
+            ) if pd.notna(v) else "-"
+        )
+
+    # Monta HTML da tabela (full width + estilos)
+    n_cols = len(preview_df.columns) if not preview_df.empty else 3
+
+    if preview_df.empty:
+        # sem margens e bordas internas; mensagem centralizada
+        html_table = (
+            f'<table border="0" class="dataframe" '
+            f'style="width:100%; border-collapse:collapse; margin-bottom:0;">'
+            f'<tr><td colspan="{n_cols}" '
+            f'style="text-align:center; padding:12px; color:#888;">'
+            f'Não há dados para esta seleção.'
+            f'</td></tr></table>'
+        )
+    else:
+        html_table = (
+            preview_df.to_html(
+                escape=False,
+                index=False,
+                justify="center"
+            )
+            .replace(
+                '<table border="1" class="dataframe">',
+                '<table border="0" class="dataframe" '
+                'style="width:100%; border-collapse:collapse; margin-bottom:0;">'
+            )
+            .replace(
+                '<th>', '<th style="text-align:center; padding:6px; border-bottom:1px solid #ddd;">'
+            )
+            .replace(
+                '<td>', '<td style="padding:6px; border-bottom:1px solid #f0f0f0;">'
+            )
+        )
+
+        # Ícones ▲/▼ no header da coluna ordenada (indicadores visuais)
+        current_col = st.session_state["sort_col"]
+        current_is_asc = st.session_state["sort_asc"]
+        arrow = "▲" if current_is_asc else "▼"
+        if date_col in preview_df.columns:
+            html_table = html_table.replace(
+                f">{date_col}<", f">{date_col} {arrow if current_col == date_col else ''}<"
+            )
+        if value_col in preview_df.columns:
+            html_table = html_table.replace(
+                f">{value_col}<", f">{value_col} {arrow if current_col == value_col else ''}<"
+            )
+
+    # Contêiner com scroll vertical (400px) e borda externa
+    scroll_container = (
+        '<div style="max-height:400px; overflow-y:auto; width:100%; '
+        'border:1px solid #ddd; border-radius:6px;">'
+        f'{html_table}'
+        '</div>'
+    )
+    st.markdown(scroll_container, unsafe_allow_html=True)
+
+
+
+
 
 
     # 🔹 Gráficos
-    st.subheader("Gráficos")
+    st.markdown("<h3 style='margin-top: 30px; padding-bottom: 0px;'>Gráficos</h3>", unsafe_allow_html=True)
+
     dff["Mês"] = dff[date_col].dt.to_period("M").dt.to_timestamp()
 
     gcol1, gcol2 = st.columns(2)
