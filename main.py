@@ -173,37 +173,6 @@ if uploaded:
             ascending=st.session_state["sort_asc"]
         )
 
-    # -------- Controles de ordenação (acima da tabela) --------
-    st.markdown(
-        "<div style='display:flex; gap:8px; align-items:center; margin-top:8px;'>"
-        "<span style='opacity:0.8;'>Ordenar:</span>"
-        "</div>", unsafe_allow_html=True
-    )
-    b1, b2, b3, b4, _sp = st.columns([1,1,1,1,6])
-    with b1:
-        if st.button("Data ▲"):
-            st.session_state["sort_col"] = date_col
-            st.session_state["sort_asc"] = True
-    with b2:
-        if st.button("Data ▼"):
-            st.session_state["sort_col"] = date_col
-            st.session_state["sort_asc"] = False
-    with b3:
-        if st.button("Valor ▲"):
-            st.session_state["sort_col"] = value_col
-            st.session_state["sort_asc"] = True
-    with b4:
-        if st.button("Valor ▼"):
-            st.session_state["sort_col"] = value_col
-            st.session_state["sort_asc"] = False
-
-    # Reaplica a ordenação após cliques
-    if not dff.empty and st.session_state["sort_col"] in dff.columns:
-        dff = dff.sort_values(
-            by=st.session_state["sort_col"],
-            ascending=st.session_state["sort_asc"]
-        )
-
     # -------- Prévia (tabela HTML formatada) --------
     st.subheader("Prévia dos dados filtrados")
 
@@ -230,6 +199,11 @@ if uploaded:
                 f"</div>"
             ) if pd.notna(v) else "-"
         )
+
+    # Se filtro ativo for Categoria, esconde a coluna Categoria na prévia
+    preview_df = preview_df.copy()
+    if col_selection == "Categoria" and category_col in preview_df.columns:
+        preview_df = preview_df.drop(columns=[category_col])
 
     # Monta HTML da tabela (full width + estilos)
     n_cols = len(preview_df.columns) if not preview_df.empty else 3
@@ -264,18 +238,7 @@ if uploaded:
             )
         )
 
-        # Ícones ▲/▼ no header da coluna ordenada (indicadores visuais)
-        current_col = st.session_state["sort_col"]
-        current_is_asc = st.session_state["sort_asc"]
-        arrow = "▲" if current_is_asc else "▼"
-        if date_col in preview_df.columns:
-            html_table = html_table.replace(
-                f">{date_col}<", f">{date_col} {arrow if current_col == date_col else ''}<"
-            )
-        if value_col in preview_df.columns:
-            html_table = html_table.replace(
-                f">{value_col}<", f">{value_col} {arrow if current_col == value_col else ''}<"
-            )
+        
 
     # Contêiner com scroll vertical (400px) e borda externa
     scroll_container = (
@@ -291,20 +254,100 @@ if uploaded:
 
 
 
-    # 🔹 Gráficos
+    # 🔹 Gráficos (estilo inspirado no "Atividade Avaliativa")
     st.markdown("<h3 style='margin-top: 30px; padding-bottom: 0px;'>Gráficos</h3>", unsafe_allow_html=True)
 
+    # Pré-processamento temporal
     dff["Mês"] = dff[date_col].dt.to_period("M").dt.to_timestamp()
+
+    # Paleta e template
+    palette = px.colors.qualitative.Set2
+    base_layout = dict(
+        template="simple_white",
+        margin=dict(t=60, r=20, b=20, l=20),
+        title_x=0.02,
+        legend_title_text="",
+    )
+
+    # ========== ÁREA MENSAL (com marcadores), emulando “preenchimento suave” ==========
+    serie = (dff.groupby("Mês", as_index=False)[value_col]
+                .sum()
+                .sort_values("Mês"))
+
+    fig_area = px.area(
+        serie,
+        x="Mês",
+        y=value_col,
+        title="Evolução mensal do valor",
+    )
+    fig_area.update_traces(
+        mode="lines+markers",
+        marker=dict(size=6, line=dict(width=0)),
+        hovertemplate="Mês: %{x|%b/%Y}<br>Total: R$ %{y:,.2f}<extra></extra>",
+    )
+    fig_area.update_yaxes(
+        title=None,
+        showgrid=True,
+        gridcolor="rgba(0,0,0,0.07)",
+        tickprefix="R$ ",
+        tickformat=",.2f",
+        zeroline=False,
+    )
+    fig_area.update_xaxes(
+        title=None,
+        dtick="M1",
+        tickformat="%b/%y",
+        showgrid=False,
+    )
+    fig_area.update_layout(**base_layout)
+
+    # ========== BARRAS HORIZONTAIS POR CATEGORIA (ordenado desc, rótulo de valor fora) ==========
+    by_cat = (dff.groupby(category_col, as_index=False)[value_col]
+                .sum()
+                .sort_values(value_col, ascending=False))
+
+    if not by_cat.empty:
+        fig_bar = px.bar(
+            by_cat,
+            y=category_col,
+            x=value_col,
+            orientation="h",
+            title="Participação por categoria",
+            color=category_col,
+            color_discrete_sequence=palette,
+            text=by_cat[value_col].map(lambda v: f"R$ {_format_brl(v)}"),
+        )
+        fig_bar.update_traces(
+            textposition="outside",
+            hovertemplate=f"{category_col}: "+"%{y}<br>Total: R$ %{x:,.2f}<extra></extra>",
+            showlegend=False,
+        )
+        fig_bar.update_yaxes(title=None, categoryorder="total ascending")  # maior no topo
+        fig_bar.update_xaxes(
+            title=None,
+            showgrid=True,
+            gridcolor="rgba(0,0,0,0.07)",
+            tickprefix="R$ ",
+            tickformat=",.2f",
+            zeroline=False,
+        )
+        fig_bar.update_layout(**base_layout)
 
     gcol1, gcol2 = st.columns(2)
     with gcol1:
-        fig_line = px.line(dff.groupby("Mês")[value_col].sum().reset_index(),
-                           x="Mês", y=value_col, markers=True, title="Soma por mês")
-        st.plotly_chart(fig_line, use_container_width=True)
+        st.plotly_chart(
+            fig_area, use_container_width=True,
+            config={"displaylogo": False, "locale": "pt-BR"}
+        )
     with gcol2:
-        by_cat = dff.groupby(category_col)[value_col].sum().reset_index().sort_values(value_col, ascending=False)
-        fig_bar = px.bar(by_cat, x=category_col, y=value_col, title="Soma por categoria")
-        st.plotly_chart(fig_bar, use_container_width=True)
+        if not by_cat.empty:
+            st.plotly_chart(
+                fig_bar, use_container_width=True,
+                config={"displaylogo": False, "locale": "pt-BR"}
+            )
+        else:
+            st.info("Sem categorias para exibir o gráfico.")
+
 
     
 else:
